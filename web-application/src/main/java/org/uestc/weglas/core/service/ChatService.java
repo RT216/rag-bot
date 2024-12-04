@@ -22,8 +22,8 @@ public interface ChatService {
      * 支持流式输出
      *
      * @param conversation
-     * @param chat
+     * @param currentchat
      * @return
      */
-    Flux<String> streamChat(Conversation conversation, ConversationChatDetail chat);
+    Flux<String> streamChat(Conversation conversation, ConversationChatDetail currentChat);
 }

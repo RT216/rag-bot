@@ -1,4 +1,6 @@
 package org.uestc.weglas.biz.dto;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 /**
  * RAG流式聊天响应块
@@ -13,6 +15,7 @@ public class RagChatStreamChunk {
     /**
      * 是否是最后一块
      */
+    @JsonProperty("isLast")
     private boolean isLast;
 
     /**

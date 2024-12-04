@@ -88,37 +88,35 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Flux<String> streamChat(Conversation conversation, ConversationChatDetail userChat) {
         try {
-            // 参数校验
+            // 1. 参数校验
             AssertUtil.notNull(conversation);
             AssertUtil.notNull(userChat);
             AssertUtil.notNull(conversation.getId());
             
-            // 获取历史消息
-            List<String> historyMessages = conversation.getChatList().stream()
-                .map(ConversationChatDetail::getContent)
-                .collect(Collectors.toList());
-            
-            // 保存用户消息
+            // 2. 保存用户消息
             userChat.setRole("user");
             userChat.setConversationId(conversation.getId());
             conversationService.addChat(userChat);
             
-            // 调用RAG服务获取流式回复
-            return ragServiceClient.streamChat(
-                userChat.getContent(), 
-                historyMessages
-            ).map(chunk -> {
-                // 如果是最后一个chunk，保存完整的AI回复
-                if (chunk.isLast()) {
-                    ConversationChatDetail aiChat = new ConversationChatDetail();
-                    aiChat.setConversationId(conversation.getId());
-                    aiChat.setContent(chunk.getFullResponse());
-                    aiChat.setRole("assistant");
-                    conversationService.addChat(aiChat);
-                }
-                return chunk.getContent();
-            });
+            // 3. 获取历史消息
+            List<String> historyMessages = conversation.getChatList().stream()
+                .map(ConversationChatDetail::getContent)
+                .collect(Collectors.toList());
             
+            // 4. 返回流式响应
+            return ragServiceClient.streamChat(userChat.getContent(), historyMessages)
+                .map(chunk -> {
+                    // 如果是最后一个chunk，保存完整的AI回复
+                    if (chunk.isLast()) {
+                        ConversationChatDetail aiChat = new ConversationChatDetail();
+                        aiChat.setConversationId(conversation.getId());
+                        aiChat.setContent(chunk.getFullResponse());
+                        aiChat.setRole("assistant");
+                        aiChat.setType("TEXT");
+                        conversationService.addChat(aiChat);
+                    }
+                    return chunk.getContent();
+                });
         } catch (Exception e) {
             log.error("处理流式对话失败", e);
             return Flux.error(new ManagerBizException(ResultEnum.INVOKE_FAIL));

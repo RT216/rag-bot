@@ -14,6 +14,8 @@ import org.uestc.weglas.core.enums.ResultEnum;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
@@ -33,7 +35,10 @@ public class RagServiceClient {
     @Data
     public static class StreamChunk {
         private String content;
-        private boolean isLast;
+        
+        @JsonProperty("isLast")  // 使用这个注解来映射 JSON 中的 "isLast" 字段
+        private boolean last;     // Java 中使用 "last" 作为字段名
+        
         private String fullResponse;
     }
     
@@ -45,6 +50,7 @@ public class RagServiceClient {
             RagChatRequest request = new RagChatRequest();
             request.setMessage(message);
             request.setHistoryMessages(historyMessages);
+            log.info("Sending normal request: {}", request);  // 添加日志
             
             RagChatResponse response = restTemplate.postForObject(
                 ragServiceUrl + "/chat",
@@ -71,15 +77,30 @@ public class RagServiceClient {
         request.setMessage(message);
         request.setHistoryMessages(historyMessages);
         
+        log.info("Sending stream request: {}", request);  // 添加日志
+        
         return webClient.post()
-            .uri("/chat/stream")
+            .uri(ragServiceUrl + "/chat/stream")
             .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)  // 添加Accept头
             .syncBody(request)
             .retrieve()
-            .bodyToFlux(StreamChunk.class)
-            .onErrorMap(e -> {
-                log.error("调用RAG流式服务失败", e);
-                return new ManagerBizException(ResultEnum.INVOKE_FAIL);
-            });
+            .bodyToFlux(String.class)  // 先作为String接收
+            .map(this::parseChunk)     // 然后解析JSON
+            // .bodyToFlux(StreamChunk.class)
+            .doOnSubscribe(subscription -> log.info("Stream request started"))
+            .doOnNext(chunk -> log.debug("Received chunk: {}", chunk))
+            .doOnError(error -> log.error("Stream error", error))
+            .doOnComplete(() -> log.info("Stream request completed"));
+    }
+    private StreamChunk parseChunk(String jsonStr) {
+        try {
+            // 使用Jackson或其他JSON库解析
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(jsonStr, StreamChunk.class);
+        } catch (Exception e) {
+            log.error("Error parsing chunk: {}", jsonStr, e);
+            throw new RuntimeException("Error parsing stream chunk", e);
+        }
     }
 }

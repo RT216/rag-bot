@@ -183,6 +183,7 @@ class ChatAPI:
 
     def chat_endpoint(self):
         """处理普通聊天请求的端点"""
+        logging.info("Received normal chat request")
         try:
             data = request.get_json()
             chat_request = ChatRequest.from_dict(data)
@@ -197,13 +198,15 @@ class ChatAPI:
             
     def stream_chat_endpoint(self):
         """处理流式聊天请求"""
+        logging.info("Received stream chat request")
         try:
             data = request.get_json()
+            logging.info(f"Request data: {data}")
             chat_request = ChatRequest.from_dict(data)
             
             return Response(
                 stream_with_context(self.chat_service.process_stream_chat(chat_request)),
-                mimetype='application/x-ndjson'
+                mimetype='application/json'
             )
             
         except Exception as e:
@@ -232,6 +235,8 @@ def setup_cors(app: Flask):
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
         response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
         return response
+
+
 
 if __name__ == "__main__":
     setup_logging()

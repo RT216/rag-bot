@@ -1,5 +1,8 @@
 <div th:replace="fragments/header"></div>
 
+<!-- 添加一个隐藏的输入框存储会话ID -->
+<input type="hidden" id="conversationId" th:value="${conversation.id}">
+
 <div class="container mt-5" style="height: 600px; display: flex; flex-direction: column;">
     <!-- 会话内容显示区 -->
     <div class="row flex-grow-1" style="overflow-y: auto;">
@@ -47,89 +50,131 @@
 <div th:replace="fragments/footer"></div>
 
 <script>
+    // 在脚本开始处获取会话ID
+    const conversationId = document.getElementById('conversationId').value;
 
     function sendMessage() {
         const messageContent = document.getElementById('replyInput').value;
-        const sendButton = document.getElementById('sendButton'); // 获取发送按钮
-
+        const sendButton = document.getElementById('sendButton');
+        const chatContainer = document.getElementById('chatContainer');
+    
         if (!messageContent) {
             alert('请输入回复内容');
             return;
         }
-
-        // 在发送之前禁用按钮并置灰
+        // 打印调试信息
+        console.log('Sending request to:', `/conversations/${conversationId}/chat/stream`);
+        console.log('Request body:', {
+            content: messageContent,
+            conversationId: conversationId,
+            type: "TEXT",
+            role: "user"
+        });
+    
+        // 禁用输入和按钮
         sendButton.disabled = true;
+        document.getElementById('replyInput').disabled = true;
         sendButton.classList.add('btn-secondary');
         sendButton.classList.remove('btn-primary');
+    
+        // 立即添加用户消息到界面
+        const userMessageWrapper = document.createElement('div');
+        userMessageWrapper.classList.add('d-flex', 'mb-3', 'justify-content-end');
+        userMessageWrapper.innerHTML = `
+            <div class="card" style="max-width: 60%;">
+                <div class="card-body">
+                    <p class="card-text">${messageContent}</p>
+                </div>
+            </div>
+        `;
+        chatContainer.appendChild(userMessageWrapper);
+    
+        // 创建新的AI回复框
+        const aiMessageWrapper = document.createElement('div');
+        aiMessageWrapper.classList.add('d-flex', 'mb-3', 'justify-content-start');
+        const aiResponseId = 'ai-response-' + Date.now(); // 生成唯一ID
+        aiMessageWrapper.innerHTML = `
+            <div class="me-2">
+                <i class="fa-solid fa-graduation-cap card-img-top fa-2x"></i>
+            </div>
+            <div class="card" style="max-width: 60%;">
+                <div class="card-body">
+                    <p class="card-text" id="${aiResponseId}"></p>
+                </div>
+            </div>
+        `;
+        chatContainer.appendChild(aiMessageWrapper);
 
-        fetch('/conversations/addChat.json', {
+        // 获取新创建的AI响应文本元素
+        const aiResponseText = document.getElementById(aiResponseId);
+    
+        // 发送消息并获取流式响应
+        fetch(`/conversations/${conversationId}/chat/stream`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'  // 添加这个头
             },
             body: JSON.stringify({
                 content: messageContent,
-                conversationId: [[${conversation.id}]],
+                conversationId: parseInt(conversationId),  // 确保转换为数字
                 type: "TEXT",
                 role: "user"
             })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // 清空输入框
-                    document.getElementById('replyInput').value = '';
-
-                    // 获取聊天容器
-                    const chatContainer = document.getElementById('chatContainer');
-
-                    // 遍历响应中的 values 数组
-                    data.values.forEach(value => {
-                        const chatWrapper = document.createElement('div');
-
-                        // 根据消息的角色（role）调整对齐方向
-                        if (value.role === 'user') {
-                            chatWrapper.classList.add('d-flex', 'mb-3', 'justify-content-end');
-                            chatWrapper.innerHTML = `
-                        <div class="card" style="max-width: 60%;">
-                            <div class="card-body">
-                                <p class="card-text">${value.content}</p>
-                            </div>
-                        </div>
-                    `;
-                        } else if (value.role === 'assistant') {
-                            chatWrapper.classList.add('d-flex', 'mb-3', 'justify-content-start');
-                            chatWrapper.innerHTML = `
-                        <div class="me-2">
-                            <i class="fa-solid fa-graduation-cap card-img-top fa-2x"></i>
-                        </div>
-                        <div class="card" style="max-width: 60%;">
-                            <div class="card-body">
-                                <p class="card-text">${value.content}</p>
-                            </div>
-                        </div>
-                    `;
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            const reader = response.body.getReader();
+            let accumulatedResponse = '';
+    
+            function readStream() {
+                return reader.read().then(({done, value}) => {
+                    if (done) {
+                        console.log('Stream complete');  // 添加完成日志
+                        // 流结束，恢复输入状态
+                        document.getElementById('replyInput').value = '';
+                        document.getElementById('replyInput').disabled = false;
+                        sendButton.disabled = false;
+                        sendButton.classList.remove('btn-secondary');
+                        sendButton.classList.add('btn-primary');
+                        return;
+                    }
+    
+                    try {
+                        const chunk = new TextDecoder().decode(value);
+                        if (chunk.trim()) {  // 只处理非空内容
+                            // 删除所有的data:前缀
+                            console.log('Received chunk:', chunk);
+                            const processed_chunk = chunk.replace(/data:/g, '').replace(/\n/g, '');
+                            console.log('Processed chunk:', processed_chunk);
+                            accumulatedResponse += processed_chunk;
+                            aiResponseText.textContent = accumulatedResponse;
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
                         }
-                        // 将生成的消息插入聊天容器
-                        chatContainer.insertBefore(chatWrapper, chatContainer.lastElementChild.nextSibling);
-                    });
-
-                    // 确保聊天容器滚动到底部
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                } else {
-                    alert('发送失败，请重试');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('发送失败，请检查网络连接');
-            })
-            .finally(() => {
-                // 在请求完成后，启用按钮并恢复原来的颜色
-                sendButton.disabled = false;
-                sendButton.classList.remove('btn-secondary');
-                sendButton.classList.add('btn-primary');
-            });
+                    } catch (e) {
+                        console.error('Error processing chunk:', e);
+                    }
+    
+                    return readStream();
+                }).catch(error => {
+                    console.error('Error reading stream:', error);
+                    throw error;
+                });
+            }
+    
+            return readStream();
+        }).catch(error => {
+            console.error('Error:', error);
+            alert('发送失败，请检查网络连接');
+            // 发生错误时移除AI回复框
+            aiMessageWrapper.remove();
+            // 恢复输入状态
+            document.getElementById('replyInput').disabled = false;
+            sendButton.disabled = false;
+            sendButton.classList.remove('btn-secondary');
+            sendButton.classList.add('btn-primary');
+        });
     }
 
     function handleEnter(event) {

@@ -15,6 +15,8 @@ import org.uestc.weglas.util.exception.ManagerBizException;
 
 import java.util.List;
 import java.util.ArrayList;
+import reactor.core.publisher.Flux;
+import org.springframework.http.MediaType;
 
 /**
  * @author yingxian.cyx
@@ -96,9 +98,20 @@ public class ConversationController {
         }
     }
 
-
-
-    
-
+    @PostMapping(value = "/{conversationId}/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> streamChat(
+            @PathVariable Integer conversationId,
+            @RequestBody ConversationChatDetail userChat) {
+        log.info("Received stream chat request for conversation: {}, message: {}", 
+                 conversationId, userChat.getContent());  // 添加日志
+        try {
+            Conversation conversation = conversationService.queryById(conversationId);
+            AssertUtil.notNull(conversation);
+            return chatService.streamChat(conversation, userChat);
+        } catch (Exception e) {
+            log.error("Stream chat failed", e);
+            return Flux.error(new ManagerBizException(ResultEnum.INVOKE_FAIL));
+        }
+    }
 }
 
