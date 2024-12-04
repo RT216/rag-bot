@@ -1,0 +1,11 @@
+{
+    "mysql": {
+        "host": "localhost",
+        "user": "your_username",
+        "password": "your_password",
+        "database": "your_database"
+    },
+    "openai": {
+        "api_key": "your-openai-api-key"
+    }
+}

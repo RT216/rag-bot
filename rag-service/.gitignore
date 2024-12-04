@@ -1,0 +1,13 @@
+# 生成的文件
+*.index
+vector_store/
+__pycache__/
+.venv/
+
+# 配置文件
+config.json
+.env
+
+# 数据文件
+data/
+

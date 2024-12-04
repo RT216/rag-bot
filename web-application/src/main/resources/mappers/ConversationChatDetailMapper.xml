@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.uestc.weglas.base.mapper.ConversationChatDetailMapper">
+
+    <insert id="insert" parameterType="org.uestc.weglas.base.entity.ConversationChatDetailEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `ai_conversation_chat_detail` (`conversation_id`, `role`, `type`,`content`, `ext`, `gmt_create`, `gmt_modified`)
+        VALUES (#{conversationId},
+                #{role},
+                #{type},
+                #{content},
+                #{ext},
+                CURRENT_TIMESTAMP(),
+                CURRENT_TIMESTAMP())
+    </insert>
+
+    <delete id="deleteById">
+        DELETE
+        FROM `ai_conversation_chat_detail`
+        WHERE `id` = #{id}
+    </delete>
+
+    <update id="updateById" parameterType="org.uestc.weglas.base.entity.ConversationChatDetailEntity">
+        UPDATE `ai_conversation_chat_detail`
+        SET `conversation_id` = #{conversationId},
+            `role` = #{role},
+            `type` = #{type},
+            `content` = #{content},
+            `ext` = #{ext},
+            `gmt_modified` = CURRENT_TIMESTAMP()
+        WHERE `id` = #{id}
+    </update>
+</mapper>

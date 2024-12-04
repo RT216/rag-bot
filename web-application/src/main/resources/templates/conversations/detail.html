@@ -1,0 +1,141 @@
+<div th:replace="fragments/header"></div>
+
+<div class="container mt-5" style="height: 600px; display: flex; flex-direction: column;">
+    <!-- 会话内容显示区 -->
+    <div class="row flex-grow-1" style="overflow-y: auto;">
+        <div class="col-md-3" style="background-color: #f8f9fa; overflow-y: auto;">
+            <h4 class="text-center">历史会话</h4>
+            <div class="list-group" id="conversationList">
+                <a th:each="conversation : ${conversations}"
+                   th:href="@{'/conversations/detail'(conversationId=${conversation.id})}"
+                   class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <span th:text="${conversation.title}"></span>
+                    <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+
+        <div class="col-md-9 d-flex flex-column" style="padding: 10px;">
+            <h4 class="text-center">会话详情</h4>
+            <div id="chatContainer">
+                <div th:if="${conversation != null}">
+                    <div th:each="chat : ${conversation.chatList}" class="d-flex mb-3"
+                         th:classappend="${chat.role == 'user' ? 'justify-content-end' : 'justify-content-start'}">
+                        <!-- 如果是 assistant 角色，添加头像 -->
+                        <div th:if="${chat.role == 'assistant'}" class="me-2">
+                            <i class="fa-solid fa-graduation-cap card-img-top fa-2x"></i>
+                        </div>
+                        <div class="card" style="max-width: 60%;">
+                            <div class="card-body">
+                                <p class="card-text" th:text="${chat.content}"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 回复输入框 -->
+            <div id="chatReply" class="mt-auto d-flex">
+                <input type="text" id="replyInput" class="form-control" placeholder="输入您的回复..."
+                       onkeypress="handleEnter(event)">
+                <button id="sendButton" class="btn btn-primary ms-2" onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+<div th:replace="fragments/footer"></div>
+
+<script>
+
+    function sendMessage() {
+        const messageContent = document.getElementById('replyInput').value;
+        const sendButton = document.getElementById('sendButton'); // 获取发送按钮
+
+        if (!messageContent) {
+            alert('请输入回复内容');
+            return;
+        }
+
+        // 在发送之前禁用按钮并置灰
+        sendButton.disabled = true;
+        sendButton.classList.add('btn-secondary');
+        sendButton.classList.remove('btn-primary');
+
+        fetch('/conversations/addChat.json', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: messageContent,
+                conversationId: [[${conversation.id}]],
+                type: "TEXT",
+                role: "user"
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 清空输入框
+                    document.getElementById('replyInput').value = '';
+
+                    // 获取聊天容器
+                    const chatContainer = document.getElementById('chatContainer');
+
+                    // 遍历响应中的 values 数组
+                    data.values.forEach(value => {
+                        const chatWrapper = document.createElement('div');
+
+                        // 根据消息的角色（role）调整对齐方向
+                        if (value.role === 'user') {
+                            chatWrapper.classList.add('d-flex', 'mb-3', 'justify-content-end');
+                            chatWrapper.innerHTML = `
+                        <div class="card" style="max-width: 60%;">
+                            <div class="card-body">
+                                <p class="card-text">${value.content}</p>
+                            </div>
+                        </div>
+                    `;
+                        } else if (value.role === 'assistant') {
+                            chatWrapper.classList.add('d-flex', 'mb-3', 'justify-content-start');
+                            chatWrapper.innerHTML = `
+                        <div class="me-2">
+                            <i class="fa-solid fa-graduation-cap card-img-top fa-2x"></i>
+                        </div>
+                        <div class="card" style="max-width: 60%;">
+                            <div class="card-body">
+                                <p class="card-text">${value.content}</p>
+                            </div>
+                        </div>
+                    `;
+                        }
+                        // 将生成的消息插入聊天容器
+                        chatContainer.insertBefore(chatWrapper, chatContainer.lastElementChild.nextSibling);
+                    });
+
+                    // 确保聊天容器滚动到底部
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } else {
+                    alert('发送失败，请重试');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('发送失败，请检查网络连接');
+            })
+            .finally(() => {
+                // 在请求完成后，启用按钮并恢复原来的颜色
+                sendButton.disabled = false;
+                sendButton.classList.remove('btn-secondary');
+                sendButton.classList.add('btn-primary');
+            });
+    }
+
+    function handleEnter(event) {
+        if (event.key === 'Enter') {
+            sendMessage([[${conversation.id}]]);
+        }
+    }
+
+</script>
