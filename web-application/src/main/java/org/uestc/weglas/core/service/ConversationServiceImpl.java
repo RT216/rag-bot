@@ -13,8 +13,13 @@ import org.uestc.weglas.core.converter.ConversationChatDetailConverter;
 import org.uestc.weglas.core.converter.ConversationConverter;
 import org.uestc.weglas.core.model.Conversation;
 import org.uestc.weglas.core.model.ConversationChatDetail;
+import org.uestc.weglas.util.exception.AssertUtil;
+import org.uestc.weglas.util.exception.ManagerBizException;
+import org.uestc.weglas.core.enums.ResultEnum;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Objects;
 
 /**
  * @author yingxian.cyx
@@ -36,6 +41,9 @@ public class ConversationServiceImpl implements ConversationService {
     @Autowired
     private ConversationChatDetailMapper conversationChatDetailMapper;
 
+    @Autowired
+    private ChatService chatService;  // 注入ChatService
+
     /**
      * 新建会话，包括新建一条conversation记录+chat_detail记录
      * @param conversation 会话
@@ -43,15 +51,26 @@ public class ConversationServiceImpl implements ConversationService {
     @Override
     @Transactional
     public void add(Conversation conversation) {
+        // 1. 保存会话基本信息
         ConversationEntity entity = ConversationConverter.convert(conversation);
         conversationMapper.insert(entity);
         // 设置db返回的主键id
         conversation.setId(entity.getId());
 
-        ConversationChatDetail userChat = ConversationChatBuilder.buildDefaultChat(conversation);
-        ConversationChatDetailEntity chatEntity = ConversationChatDetailConverter.convert(userChat);
-        conversationChatDetailMapper.insert(chatEntity);
-        userChat.setId(chatEntity.getId());
+        // 2. 创建第一条用户消息
+        ConversationChatDetail userChat = new ConversationChatDetail();
+        userChat.setContent(conversation.getTitle());  // 使用title作为第一条消息
+        userChat.setConversationId(conversation.getId());
+        userChat.setType("TEXT");
+        userChat.setRole("user");
+
+        // 3. 调用chatService处理对话
+        try {
+            chatService.chat(conversation, userChat);
+        } catch (Exception e) {
+            log.error("处理首条消息失败", e);
+            throw new ManagerBizException(ResultEnum.INVOKE_FAIL);
+        }
     }
 
     /**
@@ -73,28 +92,99 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     /**
-     * TODO 会话记录列表查询
-     * @return
+     * Lecture 4 会话记录列表查询
+     * @return 所有会话列表
      */
     @Override
     public List<Conversation> queryAll() {
-        return null;
+        // 1. 获取所有会话基本信息，已经按gmt_modified DESC排序
+        List<ConversationEntity> conversationEntities = conversationMapper.selectAll();
+        List<Conversation> conversations = new ArrayList<>();
+        
+        // 2. 为每个会话获取对话记录
+        for (ConversationEntity entity : conversationEntities) {
+            if (Objects.isNull(entity)) {
+                continue;
+            }
+            
+            Conversation conversation = ConversationConverter.convert(entity);
+            
+            // 获取该会话的所有对话，已经按gmt_create排序
+            List<ConversationChatDetailEntity> chatDetails = 
+                conversationChatDetailMapper.selectByConversationId(entity.getId());
+            
+            if (!chatDetails.isEmpty()) {
+                conversation.setChatList(
+                    ConversationChatDetailConverter.convert(chatDetails)
+                );
+            }
+            
+            conversations.add(conversation);
+        }
+        
+        return conversations;
     }
 
     /**
-     * TODO 新建一条chat_detail记录
-     * @param chat 会话id
+     * Lecture 4 新建一条chat_detail记录
+     * @param chat 对话详情
      */
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void addChat(ConversationChatDetail chat) {
+        // 1. 参数校验
+        AssertUtil.notNull(chat);
+        AssertUtil.notNull(chat.getConversationId());
+        
+        try {
+            // 2. 转换并保存实体
+            ConversationChatDetailEntity chatEntity = 
+                ConversationChatDetailConverter.convert(chat);
+            int result = conversationChatDetailMapper.insert(chatEntity);
+            
+            if (result <= 0) {
+                throw new ManagerBizException(ResultEnum.INVOKE_FAIL);
+            }
+            
+            // 3. 设置返回的ID
+            chat.setId(chatEntity.getId());
+            
+            // 4. 更新会话的最后更新时间
+            conversationMapper.updateGmtModifiedById(chat.getConversationId());
+            
+        } catch (ManagerBizException e) {
+            log.error("添加对话详情失败", e);
+            throw e;
+        } catch (Exception e) {
+            log.error("添加对话详情失败", e);
+            throw new ManagerBizException(ResultEnum.INVOKE_FAIL);
+        }
     }
 
     /**
-     * TODO 删除一条chat_detail记录
-     * @param chatId
+     * Lecture 4 删除一条chat_detail记录
+     * @param chatId 对话详情ID
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void removeChat(Integer chatId) {
+        // 1. 参数校验
+        AssertUtil.notNull(chatId);
+        
+        try {
+            // 2. 删除对话详情
+            int result = conversationChatDetailMapper.deleteById(chatId);
+            
+            if (result <= 0) {
+                throw new ManagerBizException(ResultEnum.INVOKE_FAIL);
+            }
+            
+        } catch (ManagerBizException e) {
+            log.error("删除对话详情失败", e);
+            throw e;
+        } catch (Exception e) {
+            log.error("删除对话详情失败", e);
+            throw new ManagerBizException(ResultEnum.INVOKE_FAIL);
+        }
     }
 }

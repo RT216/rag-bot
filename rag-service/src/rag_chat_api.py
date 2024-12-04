@@ -1,5 +1,5 @@
-from flask import Flask, request, jsonify
-from typing import List, Dict, Any, Optional
+from flask import Flask, request, jsonify, Response, stream_with_context
+from typing import List, Dict, Any, Optional, Generator
 import json
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -50,14 +50,14 @@ class ChatCompletionHandler:
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
 
-    def create_completion(self, messages: List[Dict[str, str]], retries: int = 3, delay: int = 2):
+    def create_completion(self, messages: List[Dict[str, str]], stream: bool = False, retries: int = 3, delay: int = 2):
         """创建聊天完成，包含重试机制"""
         for attempt in range(retries):
             try:
                 return self.client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=messages,
-                    stream=False  # Web API中使用非流式响应
+                    stream=stream
                 )
             except Exception as e:
                 if attempt == retries - 1:
@@ -71,7 +71,7 @@ class RAGChatService:
         self.config = self._load_config(config_path)
         self.completion_handler = ChatCompletionHandler(self.config['openai']['api_key'])
         self.vectorizer = TextVectorizer(config_path)
-        self.vectorizer.load_index("data/store_knowledge.index")
+        self.vectorizer.load_index("rag-service/data/store_knowledge.index")
 
     @staticmethod
     def _load_config(config_path: str) -> Dict[str, Any]:
@@ -130,6 +130,44 @@ class RAGChatService:
                 status="error",
                 error=str(e)
             )
+            
+    def process_stream_chat(self, request: ChatRequest) -> Generator[str, None, None]:
+        """处理流式聊天请求"""
+        try:
+            messages = self._prepare_messages(request.message, request.history_messages)
+            stream = self.completion_handler.create_completion(messages, stream=True)
+            
+            full_response = ""
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    content = chunk.choices[0].delta.content
+                    full_response += content
+                    
+                    # 构造流式响应块
+                    chunk_data = {
+                        'content': content,
+                        'isLast': False,
+                        'fullResponse': None
+                    }
+                    yield json.dumps(chunk_data) + '\n'
+            
+            # 发送最后一个块，包含完整响应
+            final_chunk = {
+                'content': '',
+                'isLast': True,
+                'fullResponse': full_response
+            }
+            yield json.dumps(final_chunk) + '\n'
+            
+        except Exception as e:
+            logging.error(f"Error processing stream chat: {str(e)}")
+            error_chunk = {
+                'content': '',
+                'isLast': True,
+                'error': str(e),
+                'status': 'error'
+            }
+            yield json.dumps(error_chunk) + '\n'
 
 class ChatAPI:
     """Web API类，处理HTTP请求"""
@@ -141,9 +179,10 @@ class ChatAPI:
     def _setup_routes(self):
         """设置路由"""
         self.app.route('/chat', methods=['POST'])(self.chat_endpoint)
+        self.app.route('/chat/stream', methods=['POST'])(self.stream_chat_endpoint)
 
     def chat_endpoint(self):
-        """处理聊天请求的端点"""
+        """处理普通聊天请求的端点"""
         try:
             data = request.get_json()
             chat_request = ChatRequest.from_dict(data)
@@ -151,6 +190,24 @@ class ChatAPI:
             return jsonify(response.to_dict()), HTTPStatus.OK
         except Exception as e:
             logging.error(f"API error: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'error': str(e)
+            }), HTTPStatus.INTERNAL_SERVER_ERROR
+            
+    def stream_chat_endpoint(self):
+        """处理流式聊天请求"""
+        try:
+            data = request.get_json()
+            chat_request = ChatRequest.from_dict(data)
+            
+            return Response(
+                stream_with_context(self.chat_service.process_stream_chat(chat_request)),
+                mimetype='application/x-ndjson'
+            )
+            
+        except Exception as e:
+            logging.error(f"Stream API error: {str(e)}")
             return jsonify({
                 'status': 'error',
                 'error': str(e)
@@ -167,7 +224,17 @@ def setup_logging():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
+# 添加CORS支持
+def setup_cors(app: Flask):
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
+
 if __name__ == "__main__":
     setup_logging()
-    api = ChatAPI('config/config.json')
+    api = ChatAPI('rag-service/config/config.json')
+    setup_cors(api.app)
     api.run()

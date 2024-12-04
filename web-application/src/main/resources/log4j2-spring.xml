@@ -55,6 +55,8 @@
             <AppenderRef ref="USER_PORTRAIT_BIZ"/>
             <AppenderRef ref="Console"/>
         </Logger>
+        
+        <Logger name="org.uestc.weglas.core.service.RagServiceClient" level="DEBUG"/>
 
         <!-- Root Logger 配置 -->
         <Root level="debug">

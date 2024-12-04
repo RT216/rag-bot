@@ -156,19 +156,19 @@ class TextVectorizer:
 # 进行向量化和索引构建
 if __name__ == "__main__":
     # 初始化向量化器
-    vectorizer = TextVectorizer('config/config.json')
+    vectorizer = TextVectorizer('rag-service/config/config.json')
     
     try:
         # 设置数据库
         vectorizer.setup_database()
         
         # 从文本文件读取并插入数据
-        text_records = vectorizer.insert_texts_from_file("data/运动鞋店铺知识库.txt")
+        text_records = vectorizer.insert_texts_from_file("rag-service/data/运动鞋店铺知识库.txt")
         
         # 处理文本并存储向量
         vectorizer.process_and_store(text_records, batch_size=10)
         
         # 保存FAISS索引
-        vectorizer.save_index("data/store_knowledge.index")
+        vectorizer.save_index("rag-service/data/store_knowledge.index")
     except Exception as e:
         print(f"An error occurred: {e}")
